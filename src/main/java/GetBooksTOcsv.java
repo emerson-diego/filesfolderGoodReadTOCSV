@@ -36,46 +36,29 @@ import javax.xml.xpath.XPathFactory;
  *
  */
 public class GetBooksTOcsv {
+    static List<Book> books = new ArrayList<Book>();
+
     public static void main(String[] args) {
         final File folder = new File("C:\\Users\\edaraujo\\Google Drive\\livros");
         listBooksFromFolder(folder);
+        registerBookswithRating();
     }
 
     public static void listBooksFromFolder(final File folder) {
 
-        PrintWriter writer = null;
+        for (final File fileEntry : folder.listFiles()) {
+            if (fileEntry.isDirectory()) {
+                listBooksFromFolder(fileEntry);
+            } else {
 
-        try {
-            writer = new PrintWriter(new File("books.csv"));
-            StringBuilder sb = new StringBuilder();
+                Book book = new Book();
+                book.setDescription(fileEntry.getName().replace(",", " ").replace(";", " ").replace(".pdf", "")
+                        .replace("_", " ").replace("-", " "));
+                book.setKeys(getLongestWordsFromBook(book.getDescription()));
+                book.setRating(getRatingFromGoodReads(book.getKeys()));
+                books.add(book);
 
-            for (final File fileEntry : folder.listFiles()) {
-                if (fileEntry.isDirectory()) {
-                    listBooksFromFolder(fileEntry);
-                } else {
-
-                    String book = fileEntry.getName().replace(",", " ").replace(";", " ").replace(".pdf", "")
-                            .replace("_", " ").replace("-", " ");
-                    sb.append(book);
-                    sb.append(',');
-                    sb.append(getLongestWordsFromBook(book));
-                    sb.append('\n');
-
-                }
             }
-
-            writer.write(sb.toString());
-
-        } catch (FileNotFoundException e) {
-            System.out.println(e.getMessage());
-        } finally {
-            writer.close();
-        }
-
-        try {
-            getReviewFromGoodReads();
-        } catch (IOException e) {
-            System.out.println("Error to read the file.");
         }
     }
 
@@ -98,80 +81,70 @@ public class GetBooksTOcsv {
         return result.toString();
     }
 
-    public static void getReviewFromGoodReads() throws IOException {
-        String[] data = null;
-        BufferedReader csvReader = null;
+    public static String getRatingFromGoodReads(String keys) {
+
+        HttpRequestFactory requestFactory = new ApacheHttpTransport().createRequestFactory();
+        String url = "https://www.goodreads.com/book/title.xml?key=x0F6Rd2cVbxEhZFm6Wsn3w&title=" + keys;
+
+        System.out.println(url);
+        GenericUrl genericUrl = new GenericUrl(url);
+        HttpResponse resp = null;
+        String rating = "";
+
+        if (keys.length() > 1) {
+
+            try {
+                resp = requestFactory.buildGetRequest(genericUrl).execute();
+
+                XPathFactory xpathFactory = XPathFactory.newInstance();
+                XPath xpath = xpathFactory.newXPath();
+                InputSource source = new InputSource(new StringReader(resp.parseAsString()));
+                Node root = (Node) xpath.evaluate("/", source, XPathConstants.NODE);
+                String status;
+                String reviews;
+                try {
+                    status = xpath.evaluate("/GoodreadsResponse/book/average_rating", root);
+                    reviews = xpath.evaluate("/GoodreadsResponse/book/work/reviews_count", root);
+                    if (status.startsWith("0")) {
+                        status = status.substring(1, status.length());
+                    }
+                    if (status != null && !status.equals("") && reviews != null && Integer.parseInt(reviews) > 100) {
+                        rating = status;
+                    } else {
+                        rating = "0 XXX no there status";
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    rating = "0 XXX " + e.getMessage();
+                }
+            } catch (Exception e) {
+                rating = "0 XXX BOOK NOT FOUND";
+            }
+
+        } else {
+            rating = "0 XXX no there";
+        }
+
+        return rating;
+
+    }
+
+    public static void registerBookswithRating() {
         PrintWriter writer = null;
-        List<String> listBooks = new ArrayList<String>();
-        String register = "";
+        StringBuilder sb = new StringBuilder();
+        books.sort((b1, b2) -> b2.getRating().compareTo(b1.getRating()));
+        for (Book book : books) {
+            sb.append(book.toString());
+        }
 
         try {
-            csvReader = new BufferedReader(new FileReader("books.csv"));
-            writer = new PrintWriter(new File("books_gr.csv"));
-
-            String row = "";
-
-            row = csvReader.readLine();
-
-            while (row != null) {
-
-                data = row != null ? row.split(",") : new String[0];
-
-                if (data.length > 1) {
-                    HttpRequestFactory requestFactory = new ApacheHttpTransport().createRequestFactory();
-                    String url = "https://www.goodreads.com/book/title.xml?key=x0F6Rd2cVbxEhZFm6Wsn3w&title=" + data[1];
-
-                    System.out.println(url);
-                    GenericUrl genericUrl = new GenericUrl(url);
-                    HttpResponse resp = null;
-
-                    try {
-                        resp = requestFactory.buildGetRequest(genericUrl).execute();
-
-                        XPathFactory xpathFactory = XPathFactory.newInstance();
-                        XPath xpath = xpathFactory.newXPath();
-                        InputSource source = new InputSource(new StringReader(resp.parseAsString()));
-                        Node root = (Node) xpath.evaluate("/", source, XPathConstants.NODE);
-                        String status;
-                        String reviews;
-                        try {
-                            status = xpath.evaluate("/GoodreadsResponse/book/average_rating", root);
-                            reviews = xpath.evaluate("/GoodreadsResponse/book/work/reviews_count", root);
-                            if (status.startsWith("0")) {
-                                status = status.substring(1, status.length());
-                            }
-                            if (status != null && !status.equals("") && reviews != null
-                                    && Integer.parseInt(reviews) > 100) {
-                                register = row + "," + status + "\n";
-                            } else {
-                                register = row + ", 0 XXX no there status  \n";
-                            }
-                        } catch (Exception e) {
-                            // TODO Auto-generated catch block
-                            e.printStackTrace();
-                            register = row + ", 0 XXX " + e.getMessage() + " \n";
-                        }
-                    } catch (Exception e) {
-                        register = row + ", 0 XXX " + "BOOK NOT FOUND" + " \n";
-                    }
-
-                } else {
-                    register = row + ", 0 XXX no there " + "\n";
-                }
-
-                listBooks.add(register);
-                row = csvReader.readLine();
-            }
+            writer = new PrintWriter(new File("books.csv"));
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
         } finally {
-
-            StringBuilder sb = new StringBuilder();
-            for (String book : listBooks) {
-                sb.append(book);
-            }
-
             writer.write(sb.toString());
             writer.close();
-            csvReader.close();
+
         }
 
     }

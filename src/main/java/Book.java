@@ -15,6 +15,9 @@ public class Book {
         this.keys = keys;
     }
 
+    public Book() {
+    }
+
     public String getDescription() {
         return description;
     }
@@ -37,6 +40,11 @@ public class Book {
 
     public void setRating(String rating) {
         this.rating = rating;
+    }
+
+    @Override
+    public String toString() {
+        return description + "," + keys + "," + rating + "\n";
     }
 
 }
